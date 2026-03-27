@@ -1,0 +1,23 @@
+# Sprint 1 — PDF extraction
+PyMuPDF>=1.24        # PDF bookmarks + text extraction
+pdfplumber>=0.11     # Font-size analysis for heading detection
+pyyaml>=6.0
+python-dotenv>=1.0
+click>=8.1           # CLI
+
+# Sprint 2 — EPUB
+ebooklib>=0.18
+beautifulsoup4>=4.12
+lxml>=5.0
+
+# Sprint 3 — TTS (API)
+mistralai>=1.0       # Official Mistral Python SDK
+
+# Sprint 4 — Audio
+pydub>=0.25
+# ffmpeg must be installed separately: sudo apt install ffmpeg
+
+# Sprint 3 (local, main machine only)
+# torch>=2.2
+# transformers>=4.40
+# soundfile>=0.12

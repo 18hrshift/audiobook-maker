@@ -1,0 +1,39 @@
+# Audiobook Maker Config
+
+input:
+  # Path to your book file (PDF, EPUB, MOBI)
+  # Can also be passed as CLI argument: python main.py mybook.pdf
+  path: ""
+
+output:
+  dir: "./output"
+  format: "mp3"          # mp3 or wav
+  also_make_m4b: true    # Bundle everything into a single .m4b audiobook file
+
+tts:
+  # "api" = Mistral cloud (needs MISTRAL_API_KEY in .env)
+  # "local" = local Voxtral on GPU (main machine only)
+  backend: "api"
+
+  # Voice cloning: path to a short reference audio clip (3+ seconds)
+  # Leave blank to use Voxtral's default voice
+  reference_audio: ""
+
+  # How many characters per TTS chunk (stay under model limits)
+  chunk_size: 1000
+
+chapter_detection:
+  # Detection methods tried in order — first success wins
+  methods:
+    - bookmarks      # PDF/EPUB built-in TOC (most reliable)
+    - font_size      # Headings are larger than body text
+    - pattern        # "Chapter 1", "Part I", roman numerals, etc.
+    - page_split     # Fallback: split every N pages
+
+  page_split_size: 20  # Pages per chunk when using fallback
+
+text_cleaning:
+  remove_headers_footers: true
+  fix_hyphenation: true          # re-join split words at line endings
+  normalize_quotes: true         # curly → straight quotes
+  skip_pages_before_chapter_1: true  # drop front matter (title page, TOC, etc.)
