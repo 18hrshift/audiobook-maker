@@ -90,4 +90,15 @@ def chunk_for_tts(text: str, max_chars: int = 1000) -> list[str]:
     if current:
         chunks.append(current)
 
-    return [c for c in chunks if c.strip()]
+    # Hard-split any chunk that still exceeds max_chars (no sentence/clause breaks found)
+    final = []
+    for chunk in chunks:
+        if len(chunk) <= max_chars:
+            final.append(chunk)
+        else:
+            for i in range(0, len(chunk), max_chars):
+                part = chunk[i:i + max_chars].strip()
+                if part:
+                    final.append(part)
+
+    return [c for c in final if c.strip()]

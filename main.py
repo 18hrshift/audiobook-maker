@@ -3,15 +3,15 @@
 audiobook-maker — Convert PDFs and eBooks to chapter-divided audio.
 
 Usage:
-  python main.py mybook.pdf                  # Full run (TTS + audio assembly)
-  python main.py mybook.pdf --dry-run        # Extract text only, no TTS
-  python main.py mybook.pdf --chapters       # List detected chapters and exit
-  python main.py mybook.pdf --chapter 3      # Only render chapter 3
-  python main.py mybook.pdf --backend local  # Override TTS backend
+  python main.py mybook.pdf                      # Full run
+  python main.py mybook.pdf --dry-run            # Extract + preprocess text only
+  python main.py mybook.pdf --chapters           # List detected chapters and exit
+  python main.py mybook.pdf --chapter 3          # Render only chapter 3
+  python main.py mybook.pdf --voice john         # Use 'john' voice profile
+  python main.py mybook.pdf --backend local      # Override TTS backend
 """
 
 import logging
-import os
 import sys
 import tempfile
 from pathlib import Path
@@ -19,6 +19,7 @@ from pathlib import Path
 import click
 import yaml
 from dotenv import load_dotenv
+from tqdm import tqdm
 
 load_dotenv(Path(__file__).parent / ".env")
 
@@ -56,27 +57,44 @@ def get_tts(config: dict, backend_override: str | None = None):
         from tts.local import LocalVoxtralTTS
         return LocalVoxtralTTS(config)
     else:
-        raise ValueError(f"Unknown TTS backend: {backend}. Choose 'api' or 'local'")
+        raise ValueError(f"Unknown TTS backend: {backend}. Use 'api' or 'local'")
+
+
+def get_reference_audio(config: dict, voice_override: str | None = None) -> Path | None:
+    tts_cfg = config.get("tts", {})
+    profiles = config.get("voice_profiles", {})
+    voice_name = voice_override or tts_cfg.get("voice", "default")
+    profile = profiles.get(voice_name, {})
+    ref = profile.get("reference_audio", "")
+    if not ref:
+        return None
+    p = Path(ref)
+    if not p.exists():
+        log.warning("Voice profile '%s' reference audio not found: %s", voice_name, ref)
+        return None
+    log.info("Voice profile: %s (%s)", voice_name, p.name)
+    return p
 
 
 @click.command()
 @click.argument("book_path", type=click.Path(exists=True))
 @click.option("--config", "config_path", default="config.yaml", show_default=True)
-@click.option("--dry-run", is_flag=True, help="Extract + clean text only, skip TTS")
+@click.option("--dry-run", is_flag=True, help="Extract + preprocess text, skip TTS")
 @click.option("--chapters", "list_chapters", is_flag=True, help="Show chapter list and exit")
-@click.option("--chapter", "only_chapter", type=int, default=None, help="Render only this chapter number")
-@click.option("--backend", type=click.Choice(["api", "local"]), default=None, help="Override TTS backend")
+@click.option("--chapter", "only_chapter", type=int, default=None, help="Render only this chapter")
+@click.option("--voice", default=None, help="Voice profile name from config")
+@click.option("--backend", type=click.Choice(["api", "local"]), default=None)
 @click.option("-v", "--verbose", is_flag=True)
-def main(book_path, config_path, dry_run, list_chapters, only_chapter, backend, verbose):
+def main(book_path, config_path, dry_run, list_chapters, only_chapter, voice, backend, verbose):
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
     config = load_config(config_path)
-    tts_cfg = config.get("tts", {})
     out_cfg = config.get("output", {})
+    pre_cfg = config.get("preprocessing", {})
     path = Path(book_path)
 
-    # ── Extract ──────────────────────────────────────────────────────────────
+    # ── Extract ───────────────────────────────────────────────────────────────
     log.info("Loading: %s", path.name)
     extractor = get_extractor(path, config)
     book = extractor.extract(path)
@@ -88,7 +106,6 @@ def main(book_path, config_path, dry_run, list_chapters, only_chapter, backend, 
     if list_chapters:
         return
 
-    # ── Filter to requested chapter ───────────────────────────────────────────
     chapters = book.chapters
     if only_chapter is not None:
         chapters = [c for c in chapters if c.index == only_chapter]
@@ -96,16 +113,23 @@ def main(book_path, config_path, dry_run, list_chapters, only_chapter, backend, 
             print(f"Chapter {only_chapter} not found.", file=sys.stderr)
             sys.exit(1)
 
-    # ── Dry run: write text files ─────────────────────────────────────────────
     out_dir = Path(out_cfg.get("dir", "./output")) / path.stem
     out_dir.mkdir(parents=True, exist_ok=True)
+    fmt = out_cfg.get("format", "mp3")
 
+    # ── Preprocess text ───────────────────────────────────────────────────────
+    if any(pre_cfg.get(k, True) for k in ("expand_abbreviations", "convert_numbers", "inject_pauses")):
+        from preprocessor import preprocess_for_tts
+        for ch in chapters:
+            ch.text = preprocess_for_tts(ch.text)
+
+    # ── Dry run ───────────────────────────────────────────────────────────────
     if dry_run:
         for ch in chapters:
             out = out_dir / f"{ch.slug()}.txt"
             out.write_text(ch.text, encoding="utf-8")
             log.info("Wrote %s (%d words)", out.name, ch.word_count())
-        print(f"Dry run complete. Text files in: {out_dir}")
+        print(f"Dry run complete. Preprocessed text in: {out_dir}")
         return
 
     # ── TTS rendering ─────────────────────────────────────────────────────────
@@ -113,46 +137,40 @@ def main(book_path, config_path, dry_run, list_chapters, only_chapter, backend, 
     from assembler import assemble_chapter, build_m4b
 
     tts = get_tts(config, backend)
-    log.info("TTS backend: %s", tts.backend_name())
+    ref_audio = get_reference_audio(config, voice)
+    chunk_size = config.get("tts", {}).get("chunk_size", 1000)
 
-    ref_audio = None
-    ref_path = tts_cfg.get("reference_audio", "")
-    if ref_path:
-        ref_audio = Path(ref_path)
-        if not ref_audio.exists():
-            log.warning("Reference audio not found: %s — using default voice", ref_path)
-            ref_audio = None
+    log.info("Backend: %s | Voice: %s", tts.backend_name(), voice or "default")
 
-    chunk_size = tts_cfg.get("chunk_size", 1000)
-    fmt = out_cfg.get("format", "mp3")
     chapter_audio_paths = []
+    total_words = sum(c.word_count() for c in chapters)
 
-    for ch in chapters:
-        log.info("Rendering chapter %d: %s (%d words)", ch.index, ch.title, ch.word_count())
-        chapter_out = out_dir / f"{ch.slug()}.{fmt}"
+    with tqdm(total=total_words, unit="word", desc="Rendering", ncols=80) as pbar:
+        for ch in chapters:
+            chapter_out = out_dir / f"{ch.slug()}.{fmt}"
 
-        # Skip if already rendered
-        if chapter_out.exists():
-            log.info("  Already rendered, skipping: %s", chapter_out.name)
+            if chapter_out.exists():
+                log.info("Skipping (already rendered): %s", chapter_out.name)
+                chapter_audio_paths.append((ch, chapter_out))
+                pbar.update(ch.word_count())
+                continue
+
+            chunks = chunk_for_tts(ch.text, max_chars=chunk_size)
+            pbar.set_description(f"Ch {ch.index:02d}: {ch.title[:30]}")
+
+            with tempfile.TemporaryDirectory() as tmp:
+                chunk_files = []
+                for i, chunk in enumerate(chunks):
+                    chunk_path = Path(tmp) / f"chunk_{i:04d}.wav"
+                    tts.synthesize(chunk, chunk_path, reference_audio=ref_audio)
+                    chunk_files.append(chunk_path)
+                    words_in_chunk = len(chunk.split())
+                    pbar.update(words_in_chunk)
+
+                assemble_chapter(chunk_files, chapter_out)
+
+            log.info("Done: %s", chapter_out.name)
             chapter_audio_paths.append((ch, chapter_out))
-            continue
-
-        chunks = chunk_for_tts(ch.text, max_chars=chunk_size)
-        log.info("  %d chunks", len(chunks))
-
-        chunk_files = []
-        with tempfile.TemporaryDirectory() as tmp:
-            for i, chunk in enumerate(chunks):
-                chunk_path = Path(tmp) / f"chunk_{i:04d}.wav"
-                tts.synthesize(chunk, chunk_path, reference_audio=ref_audio)
-                chunk_files.append(chunk_path)
-                print(f"  [{ch.index:02d}] chunk {i+1}/{len(chunks)}", end="\r", flush=True)
-
-            print()
-            assemble_chapter(chunk_files, chapter_out)
-
-        log.info("  → %s", chapter_out)
-        chapter_audio_paths.append((ch, chapter_out))
 
     # ── M4B bundle ────────────────────────────────────────────────────────────
     if out_cfg.get("also_make_m4b", True) and len(chapter_audio_paths) > 1:
@@ -168,10 +186,9 @@ def main(book_path, config_path, dry_run, list_chapters, only_chapter, backend, 
             )
             print(f"\nAudiobook: {m4b_path}")
         except RuntimeError as e:
-            log.warning("M4B creation failed (ffmpeg issue?): %s", e)
+            log.warning("M4B creation failed: %s", e)
 
-    print(f"\nDone. Output: {out_dir}")
-
+    print(f"Output: {out_dir}")
     if hasattr(tts, "cost_report"):
         print(tts.cost_report())
 

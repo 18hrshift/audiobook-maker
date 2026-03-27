@@ -15,12 +15,26 @@ tts:
   # "local" = local Voxtral on GPU (main machine only)
   backend: "api"
 
-  # Voice cloning: path to a short reference audio clip (3+ seconds)
-  # Leave blank to use Voxtral's default voice
-  reference_audio: ""
+  # Active voice profile — must match a key under voice_profiles below
+  # Leave as "default" to use Voxtral's built-in voice
+  voice: "default"
 
   # How many characters per TTS chunk (stay under model limits)
   chunk_size: 1000
+
+# Named voice profiles — add as many as you want
+# reference_audio: path to a 3-30 second clean audio clip of the voice
+voice_profiles:
+  default:
+    reference_audio: ""     # blank = Voxtral default voice
+
+  # Example: clone your own voice
+  # john:
+  #   reference_audio: "./voices/john_sample.wav"
+
+  # Example: a specific narrator style
+  # narrator:
+  #   reference_audio: "./voices/narrator.mp3"
 
 chapter_detection:
   # Detection methods tried in order — first success wins
@@ -34,6 +48,12 @@ chapter_detection:
 
 text_cleaning:
   remove_headers_footers: true
-  fix_hyphenation: true          # re-join split words at line endings
-  normalize_quotes: true         # curly → straight quotes
-  skip_pages_before_chapter_1: true  # drop front matter (title page, TOC, etc.)
+  fix_hyphenation: true
+  normalize_quotes: true
+  skip_pages_before_chapter_1: true
+
+preprocessing:
+  # Applied to text just before TTS synthesis
+  expand_abbreviations: true   # Dr. → Doctor, etc. → etcetera
+  convert_numbers: true        # 42 → forty-two (years like 1984 are protected)
+  inject_pauses: true          # Ensure paragraph breaks produce natural pauses
