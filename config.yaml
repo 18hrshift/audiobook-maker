@@ -13,7 +13,8 @@ output:
 tts:
   # "api" = Mistral cloud (needs MISTRAL_API_KEY in .env)
   # "local" = local Voxtral on GPU (main machine only)
-  backend: "api"
+  # "zonos" = local Zonos-v0.1 on GPU (best quality, Linux only)
+  backend: "zonos"
 
   # Active voice profile — must match a key under voice_profiles below
   # Leave as "default" to use Voxtral's built-in voice
@@ -40,6 +41,7 @@ chapter_detection:
   # Detection methods tried in order — first success wins
   methods:
     - bookmarks      # PDF/EPUB built-in TOC (most reliable)
+    - chapter_dividers  # Full-page "CHAPTER N" divider pages (great for OCR'd PDFs)
     - font_size      # Headings are larger than body text
     - pattern        # "Chapter 1", "Part I", roman numerals, etc.
     - page_split     # Fallback: split every N pages

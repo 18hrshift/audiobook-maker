@@ -56,8 +56,11 @@ def get_tts(config: dict, backend_override: str | None = None):
     elif backend == "local":
         from tts.local import LocalVoxtralTTS
         return LocalVoxtralTTS(config)
+    elif backend == "zonos":
+        from tts.zonos import ZonosTTS
+        return ZonosTTS(config)
     else:
-        raise ValueError(f"Unknown TTS backend: {backend}. Use 'api' or 'local'")
+        raise ValueError(f"Unknown TTS backend: {backend}. Use 'api', 'local', or 'zonos'")
 
 
 def get_reference_audio(config: dict, voice_override: str | None = None) -> Path | None:
@@ -83,7 +86,7 @@ def get_reference_audio(config: dict, voice_override: str | None = None) -> Path
 @click.option("--chapters", "list_chapters", is_flag=True, help="Show chapter list and exit")
 @click.option("--chapter", "only_chapter", type=int, default=None, help="Render only this chapter")
 @click.option("--voice", default=None, help="Voice profile name from config")
-@click.option("--backend", type=click.Choice(["api", "local"]), default=None)
+@click.option("--backend", type=click.Choice(["api", "local", "zonos"]), default=None)
 @click.option("-v", "--verbose", is_flag=True)
 def main(book_path, config_path, dry_run, list_chapters, only_chapter, voice, backend, verbose):
     if verbose:

@@ -8,3 +8,5 @@ output/
 fb_session.json
 *.sqlite
 .DS_Store
+.venv*/
+.espeak-path

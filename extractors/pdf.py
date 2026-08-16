@@ -47,6 +47,8 @@ class PDFExtractor(BaseExtractor):
             log.info("Trying chapter detection: %s", method)
             if method == "bookmarks":
                 chapters = _detect_by_bookmarks(doc, pages_text)
+            elif method == "chapter_dividers":
+                chapters = _detect_by_chapter_dividers(pages_text)
             elif method == "font_size":
                 chapters = _detect_by_font_size(path, pages_text)
             elif method == "pattern":
@@ -210,6 +212,65 @@ def _detect_by_pattern(pages_text: list[str]) -> list[Chapter] | None:
             page_end=end_page,
         ))
     return chapters or None
+
+
+# ── Method 3b: Full-page chapter divider detection ─────────────────────────────
+# Works well on OCR'd/scanned PDFs where each chapter opens on its own page whose
+# first line is exactly "CHAPTER N" (a divider page). Skips front matter (any pages
+# before the first chapter) and drops back matter (Bibliography/Notes/Index/etc.).
+
+BACK_MATTER_PAT = re.compile(r"^(acknowledge?ments?|bibliography|notes|index|"
+                             r"about the author|by the same author|conclusion|"
+                             r"glossary|appendix)\b", re.IGNORECASE)
+
+CHAPTER_DIVIDER_PAT = re.compile(r"^chapter\s+(\d+)\s*$", re.IGNORECASE)
+
+
+def _detect_by_chapter_dividers(pages_text: list[str]) -> list[Chapter] | None:
+    boundaries: list[tuple[int, str]] = []  # (page_idx, "Chapter N")
+    seen_first = False
+    for page_idx, text in enumerate(pages_text):
+        lines = [l.strip() for l in text.splitlines() if l.strip()]
+        if not lines:
+            continue
+        first = lines[0]
+        m = CHAPTER_DIVIDER_PAT.match(first)
+        if m:
+            # "Chapter N" — a genuine chapter-opening divider
+            seen_first = True
+            boundaries.append((page_idx, f"Chapter {m.group(1)}"))
+            continue
+        # Detect back matter start; anything from here on is dropped
+        if seen_first and BACK_MATTER_PAT.match(first):
+            # stop scanning, this page begins back matter
+            break
+
+    if len(boundaries) < 2:
+        return None
+
+    chapters = []
+    for i, (page_idx, title) in enumerate(boundaries):
+        end_page = boundaries[i + 1][0] if i + 1 < len(boundaries) else None
+        end_page = end_page if end_page is not None else _first_back_matter(pages_text, page_idx)
+        text = "\n\n".join(pages_text[page_idx:end_page])
+        chapters.append(Chapter(
+            index=i + 1,
+            title=title,
+            text=clean_text(text),
+            page_start=page_idx + 1,
+            page_end=end_page,
+        ))
+    return chapters or None
+
+
+def _first_back_matter(pages_text: list[str], start: int) -> int:
+    for idx in range(start, len(pages_text)):
+        lines = [l.strip() for l in pages_text[idx].splitlines() if l.strip()]
+        if not lines:
+            continue
+        if BACK_MATTER_PAT.match(lines[0]):
+            return idx
+    return len(pages_text)
 
 
 # ── Method 4: Page-split fallback ─────────────────────────────────────────────
