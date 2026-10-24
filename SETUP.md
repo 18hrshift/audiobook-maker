@@ -1,7 +1,10 @@
 # Audiobook Maker — Setup Guide
 
-**Your hardware:** R9 5900 · RTX 3070 Ti (12GB VRAM) · 128GB DDR4
 **This guide covers:** Windows 11 and Linux. Run the block that matches your OS.
+
+> **Status (2026-10-24):** extraction, `--chapters` and `--dry-run` work. All three TTS
+> backends have known bugs, so a full render fails until one is fixed. See `AGENTS.md`
+> for each bug and its fix.
 
 ---
 
@@ -65,12 +68,19 @@ pip install -r requirements.txt
 
 ## 3. Choose your TTS backend
 
-You have two options. Pick one (or both — they're a single config line to switch).
+Three backends. Switching is one line in `config.yaml` (`tts.backend`) or `--backend` on the
+command line. The repo ships with `backend: "zonos"`, so change it if you pick another.
 
-### Option A — Mistral API (easiest to start)
-Works immediately, no GPU setup needed. Small cost per book (~cents for a novel).
+| Backend | Needs | Cost |
+|---|---|---|
+| `api` | Mistral API key, no GPU | $16 per million characters (about $8 for a 90k-word novel) |
+| `zonos` | Linux or macOS, NVIDIA GPU with 6 GB+ VRAM | Free |
+| `local` | NVIDIA GPU with 16 GB+ VRAM | Free, but CC BY-NC 4.0 (non-commercial only) |
 
-1. Go to [console.mistral.ai](https://console.mistral.ai) → API Keys → Create key
+### Option A: Mistral API (easiest, no GPU)
+*Known broken: `tts/mistral_api.py` targets an old SDK. Fix list in `AGENTS.md`.*
+
+1. Go to [console.mistral.ai](https://console.mistral.ai), then API Keys, then Create key
 2. Copy the key, then:
 ```bash
 cp .env.example .env
@@ -78,7 +88,6 @@ cp .env.example .env
 Edit `.env`:
 ```
 MISTRAL_API_KEY=your-key-here
-TTS_BACKEND=api
 ```
 
 In `config.yaml`, set:
@@ -87,28 +96,43 @@ tts:
   backend: "api"
 ```
 
-### Option B — Local GPU (fully offline, your 3070 Ti handles it easily)
-No API costs. First run downloads the Voxtral model (~8GB). Subsequent runs are instant.
+### Option B: Zonos on your GPU (offline, Linux or macOS)
+*Known broken: wrong model ID and voice-clone call in `tts/zonos.py`. Fix list in `AGENTS.md`.*
 
-Install PyTorch with CUDA 12:
+Zonos needs `espeak-ng` as a shared library, so native Windows won't work. WSL2 is fine.
+
 ```bash
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-pip install transformers soundfile accelerate
+sudo apt install -y espeak-ng ffmpeg
+git clone https://github.com/Zyphra/Zonos
+pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124
+pip install -e ./Zonos
 ```
 
-Verify GPU is detected:
+Don't `pip install zonos` from PyPI. That package is an empty placeholder, not Zyphra's code.
+First run downloads about 3.3 GB of weights.
+
+Verify the GPU is detected:
 ```bash
 python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
-# Should print: True  NVIDIA GeForce RTX 3070 Ti
 ```
 
 In `config.yaml`, set:
 ```yaml
 tts:
-  backend: "local"
+  backend: "zonos"
 ```
 
-`.env` doesn't need an API key for local mode.
+### Option C: Voxtral on your GPU (offline, non-commercial)
+*Known broken: `tts/local.py` doesn't import and targets a model that doesn't exist.
+It needs a rewrite as a client for the server below. Details in `AGENTS.md`.*
+
+Voxtral 4B TTS runs as a server through vLLM-Omni (16 GB+ VRAM, about 8 GB of weights):
+```bash
+pip install -U "vllm>=0.18" "vllm-omni>=0.18"
+vllm serve mistralai/Voxtral-4B-TTS-2603 --omni
+```
+
+`.env` doesn't need an API key for either local option.
 
 ---
 
@@ -165,7 +189,7 @@ python main.py mybook.pdf --chapter 1
 
 | Format | Notes |
 |--------|-------|
-| `.pdf` | Most published books work. Scanned PDFs (images) won't — use OCR first. |
+| `.pdf` | Most published books work. Scanned PDFs (images) won't — OCR first with `python ocr_pdf.py scanned.pdf` (needs Tesseract). |
 | `.epub` | Best quality — chapters are cleanly defined. |
 | `.mobi` / `.azw3` | Requires Calibre (auto-converted on the fly). |
 
@@ -186,7 +210,7 @@ pip install -r requirements.txt  # in case new deps were added
 
 **`ffmpeg not found`** — Make sure ffmpeg is on your PATH. On Windows, restart your terminal after installing.
 
-**`CUDA out of memory`** — Reduce `chunk_size` in `config.yaml` from 1000 to 500.
+**`CUDA out of memory`** — Reduce `chunk_size` in `config.yaml` from 1000 to 500. With Zonos, keep chunks under about 400 characters anyway, since it caps each clip at about 30 seconds.
 
 **`ebook-convert not found`** — Install Calibre and make sure `ebook-convert` is on your PATH. On Windows it's usually at `C:\Program Files\Calibre2\`.
 
