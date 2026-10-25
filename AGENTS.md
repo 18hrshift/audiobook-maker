@@ -98,7 +98,7 @@ That request shape is close to the cloud API, so the two backends can share code
   redoes that whole chapter.
 - `SPRINTS.md` checkboxes are all unchecked, but sprints 1 to 5 shipped (see `git log`).
   Treat it as history, not a to-do list.
-- `HANDOFF.md` is the owner's note about converting one specific book on their own machine.
+- `HANDOFF.md` holds notes from the session that added Zonos, OCR, and `chapter_dividers`.
   It is not general setup guidance.
 
 ## Which backend to use

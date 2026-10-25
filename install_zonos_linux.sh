@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Native-Linux setup for Gangster Warlords audiobook (Zonos-v0.1 local TTS).
+# Native-Linux setup for the Zonos-v0.1 local TTS backend.
 # Run from a terminal inside the Linux install:
 #   bash install_zonos_linux.sh <abs-path-to-cloned-repo> [path-to-ocr-pdf]
 set -euo pipefail
@@ -40,7 +40,7 @@ from zonos.model import Zonos
 from zonos.conditioning import make_cond_dict
 print('loading Zonos (downloads weights on first run)...', flush=True)
 m = Zonos.from_pretrained('Zonos-v0.1-transformer', device='cuda')
-cond = m.prepare_conditioning(make_cond_dict(text='This is the handoff sample from native Linux. The crime wars book is ready to record.', language='en-us'))
+cond = m.prepare_conditioning(make_cond_dict(text='This is a test sample from native Linux. The audiobook pipeline is ready to record.', language='en-us'))
 with torch.no_grad():
     wavs = m.autoencoder.decode(m.generate(cond)).cpu()
 out = Path('$PROJ/output/samples/sample_native_linux.wav'); out.parent.mkdir(parents=True, exist_ok=True)
