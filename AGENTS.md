@@ -163,5 +163,6 @@ Never put private details (accounts, machines, hosts, client work, credentials) 
 
 - Concise and direct. Short sentences. No em dashes, in copy, docs or commit messages.
 - Report outcomes as they are: if a check fails, say so with the output; if a step was skipped, say that. Explain the evidence and its limits instead of guessing confidently.
+- Credits on any 18HRSHIFT product say 18HRSHIFT with 18hrshift.com, then each person's name and role as the 18hrshift.com site lists them (its people config). Change them there first.
 
 <!-- END:18hrshift-standards -->
